@@ -1,12 +1,15 @@
 from flask import Flask, request, jsonify
+from flask_pymongo import PyMongo
+from config import MONGO_URI
+import uuid
 from models.mongo import mongo
 from services.email_service import send_email
 from services.sms_service import send_sms
 from services.inapp_service import store_in_app
-import uuid
 
+# Flask + Mongo Setup
 app = Flask(__name__)
-app.config.from_object("config")
+app.config["MONGO_URI"] = MONGO_URI
 mongo.init_app(app)
 
 # ----------------------------
@@ -38,19 +41,19 @@ def create_user():
     return jsonify({"message": "User created", "user_id": user_id}), 201
 
 # ----------------------------
-# Send Notification by method
+# Send Notification by type
 # ----------------------------
 @app.route("/notifications", methods=["POST"])
 def send_notification():
     data = request.json
-    msg_type = data.get("type")      # email, sms, inapp
-    recipient = data.get("recipient")  # email, phone, or user_id
+    msg_type = data.get("type")          # email, sms, inapp
     message = data.get("message")
+    recipient = data.get("recipient")    # email / phone / user_id depending on type
 
     if not all([msg_type, recipient, message]):
         return jsonify({"error": "Missing fields"}), 400
 
-    # Fetch user based on recipient type
+    # Lookup user based on recipient and type
     if msg_type == "email":
         user = mongo.db.users.find_one({"email": recipient})
     elif msg_type == "sms":
@@ -65,6 +68,7 @@ def send_notification():
 
     user_id = user["_id"]
 
+    # Dispatch notification
     if msg_type == "email":
         send_email(user_id, message)
     elif msg_type == "sms":
@@ -86,7 +90,7 @@ def get_user_notifications(user_id):
     return jsonify([{
         "type": n["type"],
         "message": n["message"]
-    } for n in notifications])
+    } for n in notifications]), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
